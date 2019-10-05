@@ -2,6 +2,8 @@
 (load "snake.lisp")
 
 (defparameter *cell-size* 20)
+(defparameter *delay-time* 200)
+(defparameter *board* (make-instance 'board :size 25))
 
 (defmacro with-initialised-sdl ((window-sym renderer-sym) title window-size &body body)
   `(sdl2:with-init (:everything)
@@ -61,25 +63,33 @@
      (change-dir b *right*))))
 
 (defun step-game (window-size b renderer)
-  (update-game b)
   (draw-game window-size b renderer)
   (sdl2:render-present renderer))
+
+(defun game-loop ()
+  (do () (nil nil)
+    (update-game *board*)
+    (sdl2:delay *delay-time*)))
 
 (defun start-game (board-size &key (delay-time 200))
   (let ((b (make-instance 'board :size board-size))
 	(window-size (* board-size *cell-size*)))
     (init-board b)
+    (setf *delay-time* delay-time)
+    (setf *board* b)
+    (bt:make-thread #'game-loop)
     (with-initialised-sdl (win renderer) "snek" window-size
       (sdl2:with-event-loop (:method :poll)
 	(:keydown
 	 (:keysym keysym)
 	 (let ((scancode (sdl2:scancode-value keysym)))
 	   (when (handle-keypress b scancode)
+	     (update-game b)
 	     (step-game window-size b renderer))))
 	(:idle
 	 ()
 	 (when (/= 0 (verify-game-end b))
 	   (sdl2:push-event :quit))
-	 (sdl2:delay delay-time)
+	 (sdl2:delay 10)
 	 (step-game window-size b renderer))
 	(:quit () t)))))

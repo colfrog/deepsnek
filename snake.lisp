@@ -47,14 +47,6 @@
 		(make-random-point size)))
 	      ((not (in-snake snake temp-apple)) temp-apple)))))
 
-(defmethod get-snake ((b board))
-  (with-slots (snake) b
-    (with-slots (pos) snake
-      pos)))
-
-(defmethod get-apple ((b board))
-  (slot-value b 'apple))
-
 (defun make-dir-modifier (dir)
     (cond
       ((= dir *up*)
@@ -81,7 +73,7 @@
       (let ((npos (next-pos snake)))
 	(when npos
 	  (or ; lose conditions are listed below
-	   (member npos (cdr pos) :test #'equal)
+	   (member npos (butlast (cdr pos)) :test #'equal)
 	   (< (car npos) 0)
 	   (>= (car npos) size)
 	   (< (cdr npos) 0)
@@ -140,3 +132,11 @@
 	   (and (or (= dir *left*) (= dir *right*))
 		(or (= new-dir *up*) (= new-dir *down*))))
 	(setf dir new-dir)))))
+
+(defmethod get-snake ((b board))
+  (with-slots (snake) b
+    (with-slots (pos) snake
+      pos)))
+
+(defmethod get-apple ((b board))
+  (slot-value b 'apple))
