@@ -1,16 +1,20 @@
 (defparameter *winning-score* 100)
-(defparameter *up* 0)
-(defparameter *down* 1)
-(defparameter *left* 2)
-(defparameter *right* 3)
+(defparameter *dir-none* 0)
+(defparameter *dir-up* 1)
+(defparameter *dir-down* 2)
+(defparameter *dir-left* 3)
+(defparameter *dir-right* 4)
 
 (defclass snek ()
   ((pos
     :accessor pos
     :initform nil)
+   (pos-dir
+    :accessor pos-dir
+    :initform nil)
    (dir
     :accessor dir
-    :initform -1)
+    :initform *dir-none*)
    (growing
     :accessor growing
     :initform 3)))
@@ -32,8 +36,9 @@
 
 (defmethod place-snake ((b board))
   (with-slots (size snake) b
-    (with-slots (pos) snake
-      (setf pos (list (make-random-point size))))))
+    (with-slots (pos pos-dir dir) snake
+      (setf pos (list (make-random-point size)))
+      (setf pos-dir (list (cons dir *dir-none*))))))
 
 (defmethod in-snake ((s snek) p)
   (with-slots (pos) s
@@ -49,18 +54,18 @@
 
 (defun make-dir-modifier (dir)
     (cond
-      ((= dir *up*)
+      ((= dir *dir-up*)
        (cons 0 -1))
-      ((= dir *down*)
+      ((= dir *dir-down*)
        (cons 0 1))
-      ((= dir *left*)
+      ((= dir *dir-left*)
        (cons -1 0))
-      ((= dir *right*)
+      ((= dir *dir-right*)
        (cons 1 0))))
 
 (defmethod next-pos ((s snek))
   (with-slots (pos dir) s
-    (when (/= dir -1)
+    (when (/= dir *dir-none*)
       (let
 	  ((head (car pos))
 	   (modifier (make-dir-modifier dir)))
@@ -98,6 +103,24 @@
 		(progn (setf growing (1- growing)) pos)
 		(butlast pos)))))))))
 
+(defun opposite-dir (dir)
+  (let ((opposites (vector *dir-none* *dir-down* *dir-up* *dir-right* *dir-left*)))
+    (aref opposites dir)))
+
+(defmethod iterate-snake ((s snek))
+  (with-slots (growing pos pos-dir dir) s
+    (let ((npos (next-pos s))
+	  (opdir (opposite-dir dir)))
+      (when npos
+	(if (> growing 0)
+	    (setf growing (1- growing))
+	    (progn
+	      (setf pos (butlast pos))
+	      (setf pos-dir (butlast pos-dir))))
+	(setf pos (cons npos pos))
+	(setf (cdar pos-dir) dir)
+	(setf pos-dir (cons (cons opdir *dir-none*) pos-dir))))))
+
 (defmethod maybe-eat-apel ((b board))
   (with-slots (apple snake) b  
     (with-slots (pos growing) snake
@@ -108,12 +131,15 @@
 (defmethod update-game ((b board))
   (with-slots (apple snake) b
     (with-slots (pos) snake
-      (maybe-eat-apel b)
-      (when (not apple)
-	(place-apple b))
-      (if (is-lost b)
-	  nil
-	  (iterate-snake snake)))))
+      (cond
+	((is-lost b) -1)
+	((is-won b) 1)
+	(t
+	 (maybe-eat-apel b)
+	 (when (not apple)
+	   (place-apple b))
+	 (iterate-snake snake)
+	 nil)))))
 
 (defmethod init-board ((b board))
   (with-slots (size apple snake) b
@@ -126,17 +152,22 @@
     (with-slots (dir) snake
       (when
 	  (or
-	   (= dir -1)
-	   (and (or (= dir *up*) (= dir *down*))
-		(or (= new-dir *left*) (= new-dir *right*)))
-	   (and (or (= dir *left*) (= dir *right*))
-		(or (= new-dir *up*) (= new-dir *down*))))
+	   (= dir *dir-none*)
+	   (and (or (= dir *dir-up*) (= dir *dir-down*))
+		(or (= new-dir *dir-left*) (= new-dir *dir-right*)))
+	   (and (or (= dir *dir-left*) (= dir *dir-right*))
+		(or (= new-dir *dir-up*) (= new-dir *dir-down*))))
 	(setf dir new-dir)))))
 
 (defmethod get-snake ((b board))
   (with-slots (snake) b
     (with-slots (pos) snake
       pos)))
+
+(defmethod get-snake-dirs ((b board))
+  (with-slots (snake) b
+    (with-slots (pos-dir) snake
+      pos-dir)))
 
 (defmethod get-apple ((b board))
   (slot-value b 'apple))
