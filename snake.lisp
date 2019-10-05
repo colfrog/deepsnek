@@ -89,20 +89,6 @@
     (with-slots (pos) snake
       (>= (length pos) *winning-score*))))
 
-(defmethod iterate-snake ((s snek))
-  (with-slots (pos dir growing) s
-    (let
-	((npos (next-pos s)))
-      (when npos
-	(progn
-	  (setf
-	   pos
-	   (cons
-	    npos
-	    (if (> growing 0)
-		(progn (setf growing (1- growing)) pos)
-		(butlast pos)))))))))
-
 (defun opposite-dir (dir)
   (let ((opposites (vector *dir-none* *dir-down* *dir-up* *dir-right* *dir-left*)))
     (aref opposites dir)))
