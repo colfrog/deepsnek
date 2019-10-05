@@ -20,9 +20,6 @@
     :initarg :size
     :accessor size
     :initform 0)
-   (board-matrix
-    :accessor board-matrix
-    :initform nil)
    (apple
     :accessor apple
     :initform nil)
@@ -33,11 +30,10 @@
 (defun make-random-point (size)
   (cons (random (- size 1)) (random (- size 1))))
 
-(defmethod place-snake ((b board) (s snek))
-  (with-slots (board-matrix size) b
-    (with-slots (pos) s
-      (setf pos (list (make-random-point size)))
-      (setf (aref board-matrix (caar pos) (cdar pos)) 2))))
+(defmethod place-snake ((b board))
+  (with-slots (size snake) b
+    (with-slots (pos) snake
+      (setf pos (list (make-random-point size))))))
 
 (defmethod in-snake ((s snek) p)
   (with-slots (pos) s
@@ -50,6 +46,14 @@
 		(make-random-point size)
 		(make-random-point size)))
 	      ((not (in-snake snake temp-apple)) temp-apple)))))
+
+(defmethod get-snake ((b board))
+  (with-slots (snake) b
+    (with-slots (pos) snake
+      pos)))
+
+(defmethod get-apple ((b board))
+  (slot-value b 'apple))
 
 (defun make-dir-modifier (dir)
     (cond
@@ -64,92 +68,75 @@
 
 (defmethod next-pos ((s snek))
   (with-slots (pos dir) s
-    (if (= dir -1)
-	nil
-	(let
-	    ((head (car pos))
-	     (modifier (make-dir-modifier dir)))
-	  (cons (+ (car head) (car modifier))
-		(+ (cdr head) (cdr modifier)))))))
+    (when (/= dir -1)
+      (let
+	  ((head (car pos))
+	   (modifier (make-dir-modifier dir)))
+	(cons (+ (car head) (car modifier))
+	      (+ (cdr head) (cdr modifier)))))))
 
-(defmethod is-kill ((s snek) (b board))
-  (with-slots (pos) s
-    (with-slots (size) b
-      (or ; lose conditions are listed below
-       (member (car pos) (cdr pos) :test #'equal)
-       (< (caar pos) 0)
-       (>= (caar pos) size)
-       (< (cdar pos) 0)
-       (>= (cdar pos) size)))))))
+(defmethod is-lost ((b board))
+  (with-slots (size snake) b
+    (with-slots (pos) snake
+      (let ((npos (next-pos snake)))
+	(when npos
+	  (or ; lose conditions are listed below
+	   (member npos (cdr pos) :test #'equal)
+	   (< (car npos) 0)
+	   (>= (car npos) size)
+	   (< (cdr npos) 0)
+	   (>= (cdr npos) size)))))))
 
-(defmethod is-won ((s snek))
-  (with-slots (pos) s
-    (>= (length pos) *winning-score*)))
+(defmethod is-won ((b board))
+  (with-slots (snake) b
+    (with-slots (pos) snake
+      (>= (length pos) *winning-score*))))
 
 (defmethod iterate-snake ((s snek))
   (with-slots (pos dir growing) s
     (let
-	((npos (next-pos s))
-	 (old-tail (car (last pos))))
-      (if (not npos)
-	  nil
-	  (progn
-	    (setf pos
-		  (cons npos
-			(if (> growing 0)
-			    (progn (setf growing (1- growing)) pos)
-			    (butlast pos))))
-	    old-tail)))))
+	((npos (next-pos s)))
+      (when npos
+	(progn
+	  (setf
+	   pos
+	   (cons
+	    npos
+	    (if (> growing 0)
+		(progn (setf growing (1- growing)) pos)
+		(butlast pos)))))))))
 
-(defmethod maybe-eat-apel ((s snek) (b board))
-  (with-slots (pos growing) s
-    (with-slots (apple) b  
-      (if (not (equal (car pos) apple))
-	  nil
-	  (let ((old-apple apple))
-	    (setf growing (1+ growing))
-	    (setf apple nil)
-	    old-apple)))))
+(defmethod maybe-eat-apel ((b board))
+  (with-slots (apple snake) b  
+    (with-slots (pos growing) snake
+      (when (equal (car pos) apple)
+	(setf growing (1+ growing))
+	(setf apple nil)))))
 
-(defmethod update-board ((b board))
-  (with-slots (board-matrix apple snake) b
+(defmethod update-game ((b board))
+  (with-slots (apple snake) b
     (with-slots (pos) snake
-      (let
-	  ((old-tail (iterate-snake snake))
-	   (old-apple (maybe-eat-apel snake b))
-	   (changed-points nil))
-
-	(cond (old-apple (push old-apple changed-points)))
-
-	(cond ((not apple)
-	       (place-apple b)
-	       (setf (aref board-matrix (car apple) (cdr apple)) 1)
-	       (push apple changed-points)))
-      
-	(cond (old-tail
-	       (setf (aref board-matrix (car old-tail) (cdr old-tail)) 0)
-	       (push old-tail changed-points)))
-
-	(when (not (is-kill snake b))
-	  (setf (aref board-matrix (caar pos) (cdar pos)) 2)
-	  (push (car pos) changed-points))
-
-	changed-points))))
+      (maybe-eat-apel b)
+      (when (not apple)
+	(place-apple b))
+      (if (is-lost b)
+	  nil
+	  (iterate-snake snake)))))
 
 (defmethod init-board ((b board))
-  (with-slots (size board-matrix apple snake) b
-    (setf board-matrix (make-array (list size size) :initial-element 0))
+  (with-slots (size apple snake) b
     (setf snake (make-instance 'snek))
-    (place-snake b snake)
-    (update-board b)))
+    (place-snake b)
+    (update-game b)))
 
-(defmethod change-dir ((s snek) (new-dir number))
-  (with-slots (dir) s
-    (when
-        (or
-	 (= dir -1)
-	 (and (or (= dir *up*) (= dir *down*))
-	      (or (= new-dir *left*) (= new-dir *right*)))
-	 (and (or (= dir *left*) (= dir *right*))
-	      (or (= new-dir *up*) (= new-dir *down*))))
-      (setf dir new-dir))))
+(defmethod change-dir ((b board) (new-dir number))
+  (with-slots (snake) b
+    (with-slots (dir) snake
+      (when
+	  (or
+	   (= dir -1)
+	   (and (or (= dir *up*) (= dir *down*))
+		(or (= new-dir *left*) (= new-dir *right*)))
+	   (and (or (= dir *left*) (= dir *right*))
+		(or (= new-dir *up*) (= new-dir *down*))))
+	(setf dir new-dir)))))
