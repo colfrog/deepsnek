@@ -27,6 +27,9 @@
    (apple
     :accessor apple
     :initform nil)
+   (apple-eaten
+    :accessor apple
+    :initform nil)
    (snake
     :accessor snake
     :initform nil)))
@@ -53,15 +56,19 @@
 	      ((not (in-snake snake temp-apple)) temp-apple)))))
 
 (defun make-dir-modifier (dir)
-    (cond
-      ((= dir *dir-up*)
-       (cons 0 -1))
-      ((= dir *dir-down*)
-       (cons 0 1))
-      ((= dir *dir-left*)
-       (cons -1 0))
-      ((= dir *dir-right*)
-       (cons 1 0))))
+  (cond
+    ((= dir *dir-up*)
+     (cons 0 -1))
+    ((= dir *dir-down*)
+     (cons 0 1))
+    ((= dir *dir-left*)
+     (cons -1 0))
+    ((= dir *dir-right*)
+     (cons 1 0))))
+
+(defun add-points (p1 p2)
+  (cons (+ (car p1) (car p2))
+	(+ (cdr p1) (cdr p2))))
 
 (defmethod next-pos ((s snek))
   (with-slots (pos dir) s
@@ -69,20 +76,24 @@
       (let
 	  ((head (car pos))
 	   (modifier (make-dir-modifier dir)))
-	(cons (+ (car head) (car modifier))
-	      (+ (cdr head) (cdr modifier)))))))
+	(add-points head modifier)))))
+
+(defmethod lose-conditions ((s snek) npos board-size)
+  (with-slots (pos growing) s
+    (let ((body (if (> growing 0) pos (butlast pos))))
+      (or
+       (not (not (member npos body :test #'equal)))
+       (< (car npos) 0)
+       (>= (car npos) board-size)
+       (< (cdr npos) 0)
+       (>= (cdr npos) board-size)))))
 
 (defmethod is-lost ((b board))
   (with-slots (size snake) b
     (with-slots (pos) snake
       (let ((npos (next-pos snake)))
 	(when npos
-	  (or ; lose conditions are listed below
-	   (member npos (butlast (cdr pos)) :test #'equal)
-	   (< (car npos) 0)
-	   (>= (car npos) size)
-	   (< (cdr npos) 0)
-	   (>= (cdr npos) size)))))))
+	  (lose-conditions snake npos size))))))
 
 (defmethod is-won ((b board))
   (with-slots (snake) b
@@ -108,10 +119,12 @@
 	(setf pos-dir (cons (cons opdir *dir-none*) pos-dir))))))
 
 (defmethod maybe-eat-apel ((b board))
-  (with-slots (apple snake) b  
+  (with-slots (apple apple-eaten snake) b  
     (with-slots (pos growing) snake
+      (setf apple-eaten nil)
       (when (equal (car pos) apple)
 	(setf growing (1+ growing))
+	(setf apple-eaten t)
 	(setf apple nil)))))
 
 (defmethod update-game ((b board))
@@ -128,8 +141,9 @@
 	 nil)))))
 
 (defmethod init-board ((b board))
-  (with-slots (size apple snake) b
+  (with-slots (apple snake) b
     (setf snake (make-instance 'snek))
+    (setf apple nil)
     (place-snake b)
     (update-game b)))
 
