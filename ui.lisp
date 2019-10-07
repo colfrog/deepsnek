@@ -1,6 +1,6 @@
 (ql:quickload :sdl2)
 (load "snake.lisp")
-(load "ai.lisp")
+(load "snake-ai.lisp")
 
 (defparameter *cell-size* 20)
 (defparameter *delay-time* 200)
@@ -119,7 +119,7 @@
 (defun start-game (board-size &key (delay-time 250))
   (let ((b (make-instance 'board :size board-size))
 	(window-size (* board-size *cell-size*)))
-    (init-board b)
+    (init-game b)
     (setf *delay-time* delay-time)
     (setf *board* b)
     (with-game-loop-running "snake-game-loop"
@@ -137,100 +137,36 @@
 	   (render-game window-size b renderer))
 	  (:quit () t))))))
 
-;;; state: #(head-x head-y apple-x apple-y dir growing head-up head-left head-right)
-;;; action: either of: turn left (-1), do nothing (0), turn right(1)
-(defmethod around-snake ((b board))
-  (with-slots (snake size) b
-    (with-slots (dir pos) snake
-      (let* ((ahead (make-dir-modifier dir))
-	     (left (cons (cdr ahead) (- (car ahead))))
-	     (right (cons (- (cdr ahead)) (car ahead))))
-	(vector (lose-conditions snake (add-points ahead (car pos)) size)
-		(lose-conditions snake (add-points left (car pos)) size)
-		(lose-conditions snake (add-points right (car pos)) size))))))
+(defmethod watch-ai ((sa snake-agent) &key (count 1))
+  (with-slots (board each-step) sa
+    (let* ((window-size (* (slot-value *board* 'size) *cell-size*))
+	   (orig-each-step each-step)
+	   (sdl-thread
+	    (bt:make-thread
+	     (lambda ()
+	       (with-initialised-sdl (win renderer) "smart snek" window-size
+				     (sdl2:with-event-loop (:method :poll)
+				       (:keydown
+					(:keysym keysym)
+					(let ((scancode (sdl2:scancode-value keysym)))
+					  (when (sdl2:scancode= scancode :scancode-space)
+					    (if (= *delay-time* 0)
+						(setf *delay-time* 200)
+						(setf *delay-time* 0)))))
+				       (:idle
+					()
+					(sdl2:delay 10)
+					(render-game window-size board renderer))
+				       (:quit () t))))
+	     :name "snake graphics thread")))
 
-(defun make-state (b)
-  (with-slots (apple snake) b
-    (with-slots (pos dir growing) snake
-      (let ((snake-surroundings (around-snake b)))
-	(list (caar pos) (cdar pos)
-	      (car apple) (cdr apple)
-	      dir growing
-	      (aref snake-surroundings 0)
-	      (aref snake-surroundings 1)
-	      (aref snake-surroundings 2))))))
-
-(defmethod get-safe-dir ((b board))
-  (with-slots (snake size) b
-    (with-slots (pos) snake
-      (let ((directions #((0 . 0) (0 . -1) (0 . 1) (-1 . 0) (1 . 0))))
-	(dotimes (i (length directions))
-	  (when (not (lose-conditions snake (add-points (car pos) (aref directions i)) size))
-	    (return i)))))))
-
-(defmethod turn-snake ((b board) action)
-  (when (/= action 0)
-    (with-slots (snake) b
-      (with-slots (dir) snake
-	(let* ((dirmap (vector (cons *dir-left* *dir-right*) ; up
-			      (cons *dir-right* *dir-left*) ; down
-			      (cons *dir-down* *dir-up*) ; left
-			      (cons *dir-up* *dir-down*))) ;right
-	      (dirpair (aref dirmap (- dir 1))))
-	  (if (< action 0)
-	      (change-dir b (car dirpair)) ; turn left
-	      (change-dir b (cdr dirpair)))))))) ; turn right
-
-(defun run-ai (niterations board-size &key (graphics t) (agent nil) (board nil))
-  (let* ((b (if board
-		board
-		(make-instance 'board :size board-size)))
-	 (window-size (* board-size *cell-size*))
-	 (ai-agent (if agent
-		       agent
-		       (make-instance
-			'agent
-			:epsilon 0.2
-			:learning-rate 1
-			:discount-factor 0.1
-			:actions #(-1 0 1)
-			:stepfun
-			(lambda (action)
-			  (turn-snake b action)
-			  (sdl2:delay *delay-time*)
-			  (with-slots (apple-eaten) b
-			    (let* ((game-over (update-game b))
-				   (reward (+ (if game-over (* game-over 100) 0)
-					      (if apple-eaten 10 0))))
-			      (vector
-			       (when (not game-over)
-				 (make-state b))
-			       reward))))))))
-    (when graphics
-      (bt:make-thread
-       (lambda ()
-	 (with-initialised-sdl (win renderer) "smart snek" window-size
-	   (sdl2:with-event-loop (:method :poll)
-	     (:keydown
-	      (:keysym keysym)
-	      (let ((scancode (sdl2:scancode-value keysym)))
-		(when (sdl2:scancode= scancode :scancode-space)
-		  (if (= *delay-time* 0)
-		      (setf *delay-time* 200)
-		      (setf *delay-time* 0)))))
-	     (:idle
-	      ()
-	      (sdl2:delay 10)
-	      (render-game window-size b renderer))
-	     (:quit () t))))
-       :name "snake graphics thread"))
-
-    (when (not agent)
-      (init-agent ai-agent :nstates (* 2 board-size board-size 4 2 9)))
-      
-    (dotimes (i niterations)
-      (init-board b)
-      (change-dir b (get-safe-dir b))
-      (run-episode ai-agent (make-state b)))
-
-    ai-agent))
+      (setf *delay-time* 200)
+      (setf each-step
+	    (lambda ()
+	      (when orig-each-step
+		(funcall orig-each-step))
+	      (sdl2:delay *delay-time*)))
+      (run-ai sa :count count)
+      (setf each-step orig-each-step)
+      (sdl2:push-event :quit)
+      (bt:destroy-thread sdl-thread))))

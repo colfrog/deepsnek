@@ -30,6 +30,9 @@
    (apple-eaten
     :accessor apple
     :initform nil)
+   (game-over
+    :accessor game-over
+    :initform nil)
    (snake
     :accessor snake
     :initform nil)))
@@ -128,20 +131,23 @@
 	(setf apple nil)))))
 
 (defmethod update-game ((b board))
-  (with-slots (apple snake) b
+  (with-slots (apple snake game-over) b
     (with-slots (pos) snake
-      (cond
-	((is-lost b) -1)
-	((is-won b) 1)
-	(t
-	 (maybe-eat-apel b)
-	 (when (not apple)
-	   (place-apple b))
-	 (iterate-snake snake)
-	 nil)))))
+      (if game-over
+	  game-over
+	  (cond
+	    ((is-lost b) (setf game-over -1))
+	    ((is-won b) (setf game-over 1))
+	    (t
+	     (maybe-eat-apel b)
+	     (when (not apple)
+	       (place-apple b))
+	     (iterate-snake snake)
+	     (setf game-over nil)))))))
 
-(defmethod init-board ((b board))
-  (with-slots (apple snake) b
+(defmethod init-game ((b board))
+  (with-slots (apple snake game-over) b
+    (setf game-over nil)
     (setf snake (make-instance 'snek))
     (setf apple nil)
     (place-snake b)

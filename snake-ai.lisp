@@ -1,0 +1,88 @@
+(load "ai.lisp")
+
+;;; state: #(head-up head-left head-right)
+;;; action: either of: turn left (-1), do nothing (0), turn right(1)
+
+(defmethod around-snake ((b board))
+  "Returns whether the snake's immediate surroundings will kill it"
+  (with-slots (snake size) b
+    (with-slots (dir pos) snake
+      (let* ((ahead (make-dir-modifier dir))
+	     (left (cons (cdr ahead) (- (car ahead))))
+	     (right (cons (- (cdr ahead)) (car ahead))))
+	(list (lose-conditions snake (add-points ahead (car pos)) size)
+	      (lose-conditions snake (add-points left (car pos)) size)
+	      (lose-conditions snake (add-points right (car pos)) size))))))
+
+(defmethod get-safe-dir ((b board))
+  "Returns the first safe direction that the snake can start with"
+  (with-slots (snake size) b
+    (with-slots (pos) snake
+      (let ((directions #((0 . 0) (0 . -1) (0 . 1) (-1 . 0) (1 . 0))))
+	(dotimes (i (length directions))
+	  (when (not (lose-conditions snake (add-points (car pos) (aref directions i)) size))
+	    (return i)))))))
+
+(defmethod turn-snake ((b board) action)
+  "Turns the snake left if action is -1 or right if actions is 1"
+  (when (/= action 0)
+    (with-slots (snake) b
+      (with-slots (dir) snake
+	(let* ((dirmap (vector (cons *dir-left* *dir-right*) ; up
+			      (cons *dir-right* *dir-left*) ; down
+			      (cons *dir-down* *dir-up*) ; left
+			      (cons *dir-up* *dir-down*))) ;right
+	      (dirpair (aref dirmap (- dir 1))))
+	  (if (< action 0)
+	      (change-dir b (car dirpair)) ; turn left
+	      (change-dir b (cdr dirpair)))))))) ; turn right
+
+(defclass snake-agent (agent)
+  ((board
+    :initarg :board
+    :accessor board
+    :initform (make-instance 'board :size 15))
+   (each-step
+    :initarg :each-step
+    :accessor each-step
+    :initform nil)))
+
+(defmethod snake-step ((sa snake-agent) action)
+  (with-slots (board each-step) sa
+    (with-slots (apple-eaten game-over) board
+      (when each-step
+	(funcall each-step))
+      
+      (turn-snake board action)
+      (update-game board)
+      (let* ((reward (+ (if game-over (* game-over 100) 0)
+			(if apple-eaten 10 0))))
+	(cons
+	 (when (not game-over)
+	   (around-snake board))
+	 reward)))))
+
+(defun make-snake-agent (&key)
+  "Creates the Q Learning agent for snake"
+  (let ((sa (make-instance
+	     'snake-agent
+	     :epsilon 0.2
+	     :learning-rate 1
+	     :discount-factor 0.1
+	     :actions #(-1 0 1)
+	     :stepfun #'snake-step)))
+    (with-slots (board) sa
+      (init-agent sa)
+      (init-game board)
+      sa)))
+
+(defmethod init-game ((sa snake-agent))
+  (with-slots (board) sa
+    (init-game board)
+    (change-dir board (get-safe-dir board))))
+
+(defmethod run-ai ((sa snake-agent) &key (count 1))
+  (with-slots (board) sa
+    (dotimes (i count)
+      (init-game sa)
+      (run-episode sa (around-snake board)))))
