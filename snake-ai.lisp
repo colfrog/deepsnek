@@ -86,6 +86,7 @@
 	      (change-dir b (cdr dirpair)))))))) ; turn right
 
 (defmethod snake-step ((sa snake-agent) action)
+  "An iteration of the game, the AI expects to be returned to with (next-state . reward)"
   (with-slots (board each-step) sa
     (with-slots (apple-eaten game-over) board
       (when each-step
@@ -117,12 +118,14 @@
       sa)))
 
 (defmethod init-game ((sa snake-agent))
+  "Initializes the game tied to sa"
   (with-slots (board board-matrix) sa
     (init-game board)
     (setf board-matrix (make-board-matrix board))
     (change-dir board (get-safe-dir board))))
 
 (defmethod run-ai ((sa snake-agent) &key (count 1))
+  "Runs `count` iterations of the game to be played by the AI in `sa`"
   (with-slots (board) sa
     (dotimes (i count)
       (init-game sa)
