@@ -3,6 +3,54 @@
 ;;; state: #(head-up head-left head-right)
 ;;; action: either of: turn left (-1), do nothing (0), turn right(1)
 
+(defclass snake-agent (agent)
+  ((board
+    :initarg :board
+    :accessor board
+    :initform (make-instance 'board :size 15))
+   (board-matrix
+    :accessor board-matrix
+    :initform nil)
+   (each-step
+    :initarg :each-step
+    :accessor each-step
+    :initform nil)))
+
+(defmethod make-board-matrix ((b board))
+  "Build a matrix representing the game"
+  (with-slots (size apple snake) b
+    (with-slots (pos) snake
+      (let ((matrix (make-array (list size size) :initial-element 0)))
+	(dotimes (i size)
+	  (dotimes (j size)
+	    (cond
+	      ((equal (car pos) (cons i j))
+	       (setf (aref matrix i j) 1)) ; 1 is the head
+	      ((in-snake snake (cons i j))
+	       (setf (aref matrix i j) 2)) ; 2 is the body
+	      ((equal apple (cons i j))
+	       (setf (aref matrix i j) 3))))) ; 3 is the apple
+	matrix))))
+
+(defmethod pre-update-board-matrix ((as snake-agent))
+  "Update the snake's tail and head position in the board matrix"
+  (with-slots (board board-matrix) as
+    (with-slots (snake apple) board
+      (with-slots (pos growing) snake
+	(when (= growing 0)
+	  (let ((tail (car (last pos))))
+	    (setf (aref board-matrix (car apple) (cdr apple)) 0)
+	    (setf (aref board-matrix (caar pos) (cdar pos)) 1)
+	    (setf (aref board-matrix (car tail) (cdr tail)) 0)))))))
+
+(defmethod post-update-board-matrix ((as snake-agent))
+  "Update the snake's head and the apple's positions in the board matrix"
+  (with-slots (board board-matrix) as
+    (with-slots (snake apple) board
+      (with-slots (pos) snake
+	(setf (aref board-matrix (caar pos) (cdar pos)) 2)
+	(setf (aref board-matrix (car apple) (cdr apple)) 3)))))
+
 (defmethod around-snake ((b board))
   "Returns whether the snake's immediate surroundings will kill it"
   (with-slots (snake size) b
@@ -37,16 +85,6 @@
 	      (change-dir b (car dirpair)) ; turn left
 	      (change-dir b (cdr dirpair)))))))) ; turn right
 
-(defclass snake-agent (agent)
-  ((board
-    :initarg :board
-    :accessor board
-    :initform (make-instance 'board :size 15))
-   (each-step
-    :initarg :each-step
-    :accessor each-step
-    :initform nil)))
-
 (defmethod snake-step ((sa snake-agent) action)
   (with-slots (board each-step) sa
     (with-slots (apple-eaten game-over) board
@@ -54,7 +92,9 @@
 	(funcall each-step))
       
       (turn-snake board action)
+      (pre-update-board-matrix sa)
       (update-game board)
+      (post-update-board-matrix sa)
       (let* ((reward (+ (if game-over (* game-over 100) 0)
 			(if apple-eaten 10 0))))
 	(cons
@@ -77,8 +117,9 @@
       sa)))
 
 (defmethod init-game ((sa snake-agent))
-  (with-slots (board) sa
+  (with-slots (board board-matrix) sa
     (init-game board)
+    (setf board-matrix (make-board-matrix board))
     (change-dir board (get-safe-dir board))))
 
 (defmethod run-ai ((sa snake-agent) &key (count 1))
