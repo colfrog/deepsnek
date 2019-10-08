@@ -1,6 +1,6 @@
-(load "ai.lisp")
+(load "qlearn.lisp")
 
-;;; state: #(head-up head-left head-right)
+;;; state: #(direction apple-direction head-up head-left head-right)
 ;;; action: either of: turn left (-1), do nothing (0), turn right(1)
 
 (defclass snake-agent (agent)
@@ -62,6 +62,26 @@
 	      (lose-conditions snake (add-points left (car pos)) size)
 	      (lose-conditions snake (add-points right (car pos)) size))))))
 
+(defmethod get-apple-dir ((b board))
+  "Returns the direction of the apple relative to the snake's head"
+  (with-slots (snake apple) b
+    (with-slots (pos) snake
+      (let ((head (car pos)))
+	(cond
+	  ((and (< (car head) (car apple))
+		(= (cdr head) (cdr apple)))
+	   *dir-left*)
+	  ((and (> (car head) (car apple))
+		(= (cdr head) (cdr apple)))
+	   *dir-right*)
+	  ((and (= (car head) (car apple))
+		(< (cdr head) (cdr apple)))
+	   *dir-up*)
+	  ((and (= (car head) (car apple))
+		(> (cdr head) (cdr apple)))
+	   *dir-down*)
+	  (t *dir-none*))))))
+
 (defmethod get-safe-dir ((b board))
   "Returns the first safe direction that the snake can start with"
   (with-slots (snake size) b
@@ -85,6 +105,13 @@
 	      (change-dir b (car dirpair)) ; turn left
 	      (change-dir b (cdr dirpair)))))))) ; turn right
 
+(defmethod make-state ((sa snake-agent))
+  (with-slots (board) sa
+    (with-slots (snake) board
+      (with-slots (dir) snake
+	(append (list dir (get-apple-dir board))
+		(around-snake board))))))
+
 (defmethod snake-step ((sa snake-agent) action)
   "An iteration of the game, the AI expects to be returned to with (next-state . reward)"
   (with-slots (board each-step) sa
@@ -97,10 +124,10 @@
       (update-game board)
       (post-update-board-matrix sa)
       (let* ((reward (+ (if game-over (* game-over 100) 0)
-			(if apple-eaten 10 0))))
+			(if apple-eaten 100 0))))
 	(cons
 	 (when (not game-over)
-	   (around-snake board))
+	   (make-state sa))
 	 reward)))))
 
 (defun make-snake-agent (&key)
@@ -129,4 +156,4 @@
   (with-slots (board) sa
     (dotimes (i count)
       (init-game sa)
-      (run-episode sa (around-snake board)))))
+      (run-episode sa (make-state sa)))))
