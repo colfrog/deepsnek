@@ -62,7 +62,7 @@
 
 (defmethod get-action-values ((a dqn-agent) state &key (network nil))
   (let ((net (if network network (slot-value a 'q-network))))
-    (network-predict net state)))
+    (run-network net state)))
 
 (defmethod get-max-action-value ((a dqn-agent) state &key (network nil))
   "Returns the maximum predicted action value for `state`"
