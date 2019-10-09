@@ -158,7 +158,7 @@
 	     :epsilon 1
 	     :discount-factor 0.1
 	     :learning-rate 1
-	     :nstates 4
+	     :nstates 5
 	     :nactions 3
 	     :hidden-layers '(32 32)
 	     :sample-batch-size 32
