@@ -1,4 +1,5 @@
 (ql:quickload :random-sample)
+(load "neuralnet.lisp")
 
 (defclass dqn-agent ()
   ((epsilon
@@ -52,7 +53,7 @@
 
 (defmethod init-agent ((a dqn-agent))
   "Initializes the agent"
-  (with-slots (nstates nactions hidden-layers) a
+  (with-slots (nstates nactions hidden-layers q-network) a
     (setf q-network (make-network nstates hidden-layers nactions))))
 
 (defmethod explore-action ((a dqn-agent) state)
@@ -70,8 +71,9 @@
 
 (defmethod exploit-action ((a dqn-agent) state)
   "Returns the maximum action value's index for `state`"
-  (let ((action-value (get-max-action-value a state)))
-    (position action-values)))
+  (let* ((action-values (get-action-values a state))
+	 (action-value (reduce #'max action-values)))
+    (position action-value action-values)))
     
 (defmethod get-action ((a dqn-agent) state)
   "Returns an action decided by exploration or exploitation according to epsilon"
@@ -95,10 +97,10 @@
 
 (defmethod push-memory ((a dqn-agent) state action next-state reward)
   "Pushes the state, action, next state and reward to memory"
-  (with-slots (memory memory-length) a
+  (with-slots (memory memory-len) a
     (setf memory
 	  (cons (list state action next-state reward)
-		(if (> (length memory) memory-length)
+		(if (> (length memory) memory-len)
 		    (butlast memory)
 		    memory)))))
 
@@ -110,11 +112,11 @@
 (defmethod get-memory-sample ((a dqn-agent))
   "Returns a random sample from memory"
   (with-slots (memory sample-batch-size) a
-    (if ((length memory) < sample-batch-size)
+    (if (< (length memory) sample-batch-size)
 	memory
 	(random-sample:random-sample memory sample-batch-size))))
 
-(defmethod sort-sample ((a dqn-agent) sample)
+(defmethod sort-sample ((a dqn-agent) target-network sample)
   (with-slots (discount-factor) a
     (let ((states nil)
 	  (actions nil)
@@ -130,19 +132,19 @@
 	  (setf actions (cons action actions))
 	  (setf targets (cons target targets)))))))
 
-(defmethod teach-network ((a dqn-agent) target-network sample)
+(defmethod teach-network ((a dqn-agent) (target-network network) sample)
   "Use gradient descent to correct the network using the data in `experience`"
-  (with-slots (learning-rate q-network) a
-    (let* ((sorted-sample (sort-sample a sample))
+  (with-slots (q-network) a
+    (let* ((sorted-sample (sort-sample a target-network sample))
 	   (states (car sorted-sample))
 	   (targets (cadr sorted-sample))
 	   (actions (caddr sorted-sample)))
-      (teach-network q-network state target action))))
+      (teach-neural-network q-network states targets actions))))
 
 (defmethod run-episode ((a dqn-agent) initial-state)
   "Runs an episode: recalculate everything and decide on an action until stepfun returns a nil next-step"
   (with-slots (nactions q-network memory-len steps-to-target-network-update) a
-    (do* ((i 0 (+1 i))
+    (do* ((i 0 (1+ i))
 	  (target-network (clone-network q-network) target-network)
 	  (state initial-state next-state)
 	  (action (get-action a state) (get-action a state))
@@ -150,7 +152,7 @@
 	  (next-state (car step-results) (car step-results))
 	  (reward (cdr step-results) (cdr step-results))
 	  (net-reward reward (+ net-reward reward)))
-	 ((not state) (list net-reward loss i))
+	 ((not state) (cons net-reward i))
       
       (push-memory a state action next-state reward)
       

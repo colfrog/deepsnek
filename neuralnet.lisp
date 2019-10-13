@@ -47,16 +47,6 @@
 (defun sigmoid-derivative (x)
   (* (sigmoid x) (- 1 (sigmoid x))))
 
-(defun elu (x)
-  (if (< x 0)
-      (- (exp x) 1)
-      x))
-
-(defun elu-derivative (x)
-  (if (< x 0)
-      (exp x)
-      1))
-
 (defun random-weight ()
   (- (/ (random 2000) 1000) 1))
 
@@ -74,12 +64,22 @@
   (with-slots (value links) neu
     (let ((val 0))
       (setf value
-	    (elu
+	    (sigmoid
 	     (dolist (link links val)
 	       (setf val
 		     (+ val
 			(* (slot-value (car link) 'value)
 			   (cdr link))))))))))
+
+(defmethod copy-neuron ((to-neu neuron) (from-neu neuron))
+  (with-slots ((to-links links)) to-neu
+    (with-slots ((from-links links)) from-neu
+      (do* ((to-links-tail to-links (cdr to-links-tail))
+	    (from-links-tail from-links (cdr from-links-tail))
+	    (to-link (car to-links) (car to-links-tail))
+	    (from-link (car from-links) (car from-links-tail)))
+	   ((not from-links-tail) nil)
+	(setf (cdr to-link) (cdr from-link))))))
 
 (defmethod init-neurons ((lay layer))
   (with-slots (size neurons) lay
@@ -122,6 +122,16 @@
       (when (= i index)
 	(return neu)))))
 
+(defmethod copy-layer ((to-lay layer) (from-lay layer))
+  (with-slots ((to-neurons neurons)) to-lay
+    (with-slots ((from-neurons neurons)) from-lay
+      (do* ((to-neurons-tail to-neurons (cdr to-neurons-tail))
+	    (from-neurons-tail from-neurons (cdr from-neurons-tail))
+	    (to-neuron (car to-neurons) (car to-neurons-tail))
+	    (from-neuron (car from-neurons) (car from-neurons-tail)))
+	   ((not from-neurons-tail) nil)
+	(copy-neuron to-neuron from-neuron)))))
+
 (defun make-layer (size)
   (let ((lay (make-instance 'layer :size size)))
     (init-neurons lay)
@@ -163,7 +173,7 @@
   (with-slots (errors) net
     (with-slots (links value) neu
       (when links
-	(let ((err (* loss (elu-derivative value))))
+	(let ((err (* loss (sigmoid-derivative value))))
 	  (dolist (link links)
 	    (backpropagate net (car link) (* (cdr link) err))
 	    (setf (gethash link errors)
@@ -180,7 +190,7 @@
     (maphash #'update-weight errors)
     (setf errors (make-hash-table :test 'equal))))
 
-(defmethod teach-network ((net network) (in vector) (out number) (output-node number)
+(defmethod teach-neural-network ((net network) (in vector) (out number) (output-node number)
 			  &key (iterations 100) (update t))
   (with-slots (layers) net
     (let ((output-neuron (get-neuron (car (last layers)) output-node)))
@@ -191,7 +201,7 @@
 	  (when update
 	    (update-weights net)))))))
 
-(defmethod teach-network ((net network) (inlist cons) (outlist cons) (output-nodes cons)
+(defmethod teach-neural-network ((net network) (inlist cons) (outlist cons) (output-nodes cons)
 				&key (iterations 100))
   (dotimes (i iterations)
     (do* ((inlist-tail inlist (cdr inlist-tail))
@@ -201,10 +211,21 @@
 	  (out (car outlist) (car outlist-tail))
 	  (output-node (car output-nodes) (car output-nodes)))
 	 ((not (and inlist-tail outlist-tail)) nil)
-      (teach-network net in out output-node :iterations 1 :update nil))
+      (teach-neural-network net in out output-node :iterations 1 :update nil))
     (update-weights net)))
 
 (defun make-network (in hidden out)
   (let ((net (make-instance 'network :output-nodes out :input-nodes in :hidden-layers hidden)))
     (init-network net)
     net))
+
+(defmethod clone-network ((net network))
+  (with-slots (input-nodes hidden-layers output-nodes (from-lays layers)) net
+    (let ((clone (make-network input-nodes hidden-layers output-nodes)))
+      (with-slots ((to-lays layers)) clone
+	(do* ((from-lays-tail (cdr from-lays) (cdr from-lays-tail))
+	      (to-lays-tail (cdr to-lays) (cdr to-lays-tail))
+	      (from-lay (car from-lays-tail) (car from-lays-tail))
+	      (to-lay (car to-lays-tail) (car to-lays-tail)))
+	     ((not from-lays-tail) clone)
+	  (copy-layer to-lay from-lay))))))

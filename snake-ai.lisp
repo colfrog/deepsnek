@@ -1,10 +1,10 @@
-(load "qlearn.lisp")
+(load "dqn-agent.lisp")
 (load "vectorized-matrix.lisp")
 
 ;;; state: #(direction apple-direction head-up head-left head-right)
 ;;; action: either of: do nothing (0), turn left (1), turn right(2)
 
-(defclass snake-agent (ql-agent)
+(defclass snake-agent (dqn-agent)
   ((board
     :initarg :board
     :accessor board
@@ -122,12 +122,15 @@
   (with-slots (board) sa
     (with-slots (snake) board
       (with-slots (dir) snake
-	(append (list dir (get-apple-dir board))
-		(around-snake board))))))
+	(let ((surroundings (around-snake board)))
+	  (vector dir (get-apple-dir board)
+		  (car surroundings)
+		  (cadr surroundings)
+		  (caddr surroundings)))))))
 
 (defmethod update-epsilon ((sa snake-agent) current-step)
   "Updates epsilon using exponential decay"
-  (with-slots (epsilon epsilon-start epsilon-end epsilon-decay) a
+  (with-slots (epsilon epsilon-start epsilon-end epsilon-decay) sa
     (setf epsilon
 	  (+ epsilon-end
 	     (* (- epsilon-start epsilon-end)
@@ -144,14 +147,14 @@
       (pre-update-board-matrix sa)
       (update-game board)
       (post-update-board-matrix sa)
-      (let* ((reward (+ (if game-over (* game-over 10) 0)
-			(if apple-eaten 1 0))))
+      (let* ((reward (+ (if game-over (* game-over 0.5) 0)
+			(if apple-eaten 0.2 0))))
 	(cons
 	 (when (not game-over)
 	   (make-state sa))
 	 reward)))))
 
-(defun make-snake-agent (&key)
+(defun make-snake-agent ()
   "Creates the Q Learning agent for snake"
   (let ((sa (make-instance
 	     'snake-agent
@@ -162,8 +165,8 @@
 	     :nactions 3
 	     :hidden-layers '(32 32)
 	     :sample-batch-size 32
-	     :memory-len 500
-	     :steps-to-target-network-update 500)))
+	     :memory-len 200
+	     :steps-to-target-network-update 200)))
     (with-slots (board) sa
       (init-agent sa)
       (init-game board)
