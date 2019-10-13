@@ -71,9 +71,9 @@
       (let* ((ahead (make-dir-modifier dir))
 	     (left (cons (cdr ahead) (- (car ahead))))
 	     (right (cons (- (cdr ahead)) (car ahead))))
-	(list (lose-conditions snake (add-points ahead (car pos)) size)
-	      (lose-conditions snake (add-points left (car pos)) size)
-	      (lose-conditions snake (add-points right (car pos)) size))))))
+	(list (if (lose-conditions snake (add-points ahead (car pos)) size) 1 0)
+	      (if (lose-conditions snake (add-points left (car pos)) size) 1 0)
+	      (if (lose-conditions snake (add-points right (car pos)) size) 1 0))))))
 
 (defmethod get-apple-dir ((b board))
   "Returns the direction of the apple relative to the snake's head"
@@ -166,7 +166,8 @@
 	     :hidden-layers '(32 32)
 	     :sample-batch-size 32
 	     :memory-len 200
-	     :steps-to-target-network-update 200)))
+	     :steps-to-target-network-update 200
+	     :min-steps 10000)))
     (with-slots (board) sa
       (init-agent sa)
       (init-game board)
@@ -178,6 +179,10 @@
     (init-game board)
     (setf board-matrix (make-board-matrix board))
     (change-dir board (get-safe-dir board))))
+
+(defmethod reinit-env ((sa snake-agent))
+  "Reinitializes the game tied to sa if the agent requests it"
+  (init-game sa))
 
 (defmethod run-ai ((sa snake-agent) &key (count 1))
   "Runs `count` iterations of the game to be played by the AI in `sa`"

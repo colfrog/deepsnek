@@ -41,12 +41,19 @@
     :initarg :steps-to-target-network-update
     :accessor steps-to-target-network-update
     :initform 1000)
+   (min-steps
+    :initarg :min-steps
+    :accessor min-steps
+    :initform 1000)
    (q-network
     :accessor q-network
     :initform nil)))
 
 (defgeneric stepfun (dqn-agent action)
   (:documentation "Function called every step of an episode"))
+
+(defgeneric reinit-env (dqn-agent)
+  (:documentation "Function called when the environment is done but the AI hasn't reached min-steps yet"))
 
 (defgeneric update-epsilon (dqn-agent current-step)
   (:documentation "Function called every step of an episode to update the value of epsilon"))
@@ -61,7 +68,7 @@
   (with-slots (nactions) a
     (random nactions)))
 
-(defmethod get-action-values ((a dqn-agent) state &key (network nil))
+(defmethod get-action-values ((a dqn-agent) (state vector) &key (network nil))
   (let ((net (if network network (slot-value a 'q-network))))
     (run-network net state)))
 
@@ -124,9 +131,11 @@
       (dolist (experience sample (list states targets actions))
 	(let* ((state (car experience))
 	       (action (cadr experience))
-	       (reward (caddr experience))
-	       (next-state (cadddr experience))
-	       (next-max-q (get-max-action-value a next-state :network target-network))
+	       (next-state (caddr experience))
+	       (reward (cadddr experience))
+	       (next-max-q (if next-state
+			       (get-max-action-value a next-state :network target-network)
+			       0))
 	       (target (+ reward (* discount-factor next-max-q))))
 	  (setf states (cons state states))
 	  (setf actions (cons action actions))
@@ -143,7 +152,7 @@
 
 (defmethod run-episode ((a dqn-agent) initial-state)
   "Runs an episode: recalculate everything and decide on an action until stepfun returns a nil next-step"
-  (with-slots (nactions q-network memory-len steps-to-target-network-update) a
+  (with-slots (nactions q-network memory-len steps-to-target-network-update min-steps) a
     (do* ((i 0 (1+ i))
 	  (target-network (clone-network q-network) target-network)
 	  (state initial-state next-state)
@@ -152,9 +161,11 @@
 	  (next-state (car step-results) (car step-results))
 	  (reward (cdr step-results) (cdr step-results))
 	  (net-reward reward (+ net-reward reward)))
-	 ((not state) (cons net-reward i))
-      
-      (push-memory a state action next-state reward)
+	 ((and (> i min-steps) (not state)) (cons net-reward i))
+
+      (if (and (<= i min-steps) (not state))
+	  (reinit-env a)
+	  (push-memory a state action next-state reward))
       
       (when (= (mod i steps-to-target-network-update) 0)
 	(setf target-network (clone-network q-network)))
