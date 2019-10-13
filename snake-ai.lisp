@@ -144,8 +144,8 @@
       (pre-update-board-matrix sa)
       (update-game board)
       (post-update-board-matrix sa)
-      (let* ((reward (+ (if game-over (* game-over 100) 0)
-			(if apple-eaten 100 0))))
+      (let* ((reward (+ (if game-over (* game-over 10) 0)
+			(if apple-eaten 1 0))))
 	(cons
 	 (when (not game-over)
 	   (make-state sa))

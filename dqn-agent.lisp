@@ -114,22 +114,36 @@
 	memory
 	(random-sample:random-sample memory sample-batch-size))))
 
-(defmethod teach-network ((a dqn-agent) target-network experience)
+(defmethod sort-sample ((a dqn-agent) sample)
+  (with-slots (discount-factor) a
+    (let ((states nil)
+	  (actions nil)
+	  (targets nil))
+      (dolist (experience sample (list states targets actions))
+	(let* ((state (car experience))
+	       (action (cadr experience))
+	       (reward (caddr experience))
+	       (next-state (cadddr experience))
+	       (next-max-q (get-max-action-value a next-state :network target-network))
+	       (target (+ reward (* discount-factor next-max-q))))
+	  (setf states (cons state states))
+	  (setf actions (cons action actions))
+	  (setf targets (cons target targets)))))))
+
+(defmethod teach-network ((a dqn-agent) target-network sample)
   "Use gradient descent to correct the network using the data in `experience`"
   (with-slots (learning-rate q-network) a
-    (let* ((state (car experience))
-	   (action (cadr experience))
-	   (reward (caddr experience))
-	   (next-state (cadddr experience))
-	   (next-max-q (get-max-action-value a next-state :network target-network))
-	   (target (+ reward (* discount-factor next-max-q))))
-      (network-gradient-descent q-network learning-rate state target action))))
+    (let* ((sorted-sample (sort-sample a sample))
+	   (states (car sorted-sample))
+	   (targets (cadr sorted-sample))
+	   (actions (caddr sorted-sample)))
+      (teach-network q-network state target action))))
 
 (defmethod run-episode ((a dqn-agent) initial-state)
   "Runs an episode: recalculate everything and decide on an action until stepfun returns a nil next-step"
   (with-slots (nactions q-network memory-len steps-to-target-network-update) a
     (do* ((i 0 (+1 i))
-	  (target-network (copy-network q-network) target-network)
+	  (target-network (clone-network q-network) target-network)
 	  (state initial-state next-state)
 	  (action (get-action a state) (get-action a state))
 	  (step-results (stepfun a action) (stepfun a action))
@@ -141,9 +155,8 @@
       (push-memory a state action next-state reward)
       
       (when (= (mod i steps-to-target-network-update) 0)
-	(setf target-network (copy-network q-network)))
+	(setf target-network (clone-network q-network)))
       
       (when (> i memory-len)
 	(update-epsilon a i)
-	(dolist (experience (get-memory-sample))
-	  (teach-network a target-network experience))))))
+	(teach-network a q-network (get-memory-sample a))))))
