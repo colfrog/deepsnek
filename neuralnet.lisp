@@ -209,7 +209,7 @@
 	  (output-nodes-tail output-nodes (cdr output-nodes-tail))
 	  (in (car inlist) (car inlist-tail))
 	  (out (car outlist) (car outlist-tail))
-	  (output-node (car output-nodes) (car output-nodes)))
+	  (output-node (car output-nodes) (car output-nodes-tail)))
 	 ((not (and inlist-tail outlist-tail)) nil)
       (teach-neural-network net in out output-node :iterations 1 :update nil))
     (update-weights net)))
